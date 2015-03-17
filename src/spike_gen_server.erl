@@ -19,7 +19,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {nodes=[]}).
+-record(state, {nodes=[],nodedown_action_timer}).
 
 %%%===================================================================
 %%% API
@@ -113,17 +113,20 @@ handle_info(send_time,State) ->
     erlang:send_after(1500,self(),send_time),
     {noreply,State};
 handle_info({nodedown,Node, InfoList},State) ->
-    io:format("nodedown: ~p with reason ~p~n",[Node,InfoList]),
-    {noreply,State};
+    NewState=start_nodedown_timer(Node,InfoList,State),
+    {noreply,NewState};
 handle_info({nodedown,Node},State) ->
-    io:format("nodedown: ~p~n",[Node]),
-    {noreply,State};
+    NewState=start_nodedown_timer(Node,[],State),
+    {noreply,NewState};
 handle_info({nodeup,Node,InfoList},State) ->
-    io:format("nodeup: ~p with reason~p~n",[Node,InfoList]),
-    {noreply,State#state{nodes = lists:usort(State#state.nodes ++ [Node])}};
+    NewState=cancel_nodedown_timer(Node,InfoList,State),
+    {noreply,NewState#state{nodes = lists:usort(State#state.nodes ++ [Node])}};
 handle_info({nodeup,Node},State) ->
-    io:format("nodeup: ~p~n",[Node]),
-    {noreply,State#state{nodes = lists:usort(State#state.nodes ++ [Node])}};
+    NewState=cancel_nodedown_timer(Node,[],State),
+    {noreply,NewState#state{nodes = lists:usort(State#state.nodes ++ [Node])}};
+handle_info(nodedown_action,State) ->
+    io:format("NODE DOWN!!!! AAHHHH!!!~n"),
+    {noreply,State#state{nodedown_action_timer=undefined}};
 handle_info(Info, State) ->
     io:format("unsolicited message from Jake -> ~p~n",[Info]),
     {noreply, State}.
@@ -156,3 +159,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+start_nodedown_timer(Node,InfoList,State) ->
+    io:format("nodedown: ~p with reason ~p~n",[Node,InfoList]), 
+    Response=timer:send_after(60000, nodedown_action),
+    State#state{nodedown_action_timer=Response}.
+
+cancel_nodedown_timer(Node,InfoList,#state{nodedown_action_timer={ok, TRef}} = State) ->
+    io:format("nodeup: ~p with reason ~p, stopping timer~n",[Node,InfoList]), 
+    timer:cancel(TRef),
+    State#state{nodedown_action_timer=undefined};
+cancel_nodedown_timer(Node,InfoList,State) ->
+    io:format("nodeup: ~p with reason ~p, No timer to stop~n",[Node,InfoList]), 
+    State#state{nodedown_action_timer=undefined}.
+
