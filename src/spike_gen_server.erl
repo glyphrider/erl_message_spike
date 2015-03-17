@@ -33,7 +33,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({global, ?SERVER}, ?MODULE, [], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -52,8 +52,13 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     net_kernel:monitor_nodes(true),
-    erlang:send_after(15000,self(),ping),
-    {ok, #state{}}.
+    io:format("here 1~n"),
+    erlang:send_after(1500,self(),send_time),
+    io:format("here 2~n"),
+    Nodes=lists:usort(nodes()),
+    io:format("Nodes are ~p~n",[Nodes]),
+    {ok,#state{nodes = Nodes}}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -69,8 +74,6 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(pid,_From,State) ->
-    {reply, self(), State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
@@ -85,6 +88,9 @@ handle_call(_Request, _From, State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({receive_time, Time}, State) ->
+    io:format("At the tone, the time will be ~p~n", [Time]),
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -98,11 +104,12 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(ping,State) ->
-    lists:foreach(fun(Node) -> spawn(fun() ->
-					     io:format("ping(~p) -> ~p~n",[Node,net_adm:ping(Node)])
-				     end) end, State#state.nodes),
-    erlang:send_after(15000,self(),ping),
+handle_info(send_time,State) ->
+    lists:foreach(fun(Node) ->
+                      io:format("Sending time to ~p~n", [Node]),
+                      gen_server:cast({?SERVER, Node}, {receive_time, now()})
+                  end, State#state.nodes),
+    erlang:send_after(1500,self(),send_time),
     {noreply,State};
 handle_info({nodedown,Node},State) ->
     io:format("nodedown: ~p~n",[Node]),
@@ -110,9 +117,6 @@ handle_info({nodedown,Node},State) ->
 handle_info({nodeup,Node},State) ->
     io:format("nodeup: ~p~n",[Node]),
     {noreply,State#state{nodes = lists:usort(State#state.nodes ++ [Node])}};
-handle_info(pid,State) ->
-    io:format("My pid is ~p~n",[self()]),
-    {noreply, State};
 handle_info(Info, State) ->
     io:format("unsolicited message from Jake -> ~p~n",[Info]),
     {noreply, State}.
