@@ -51,7 +51,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    net_kernel:monitor_nodes(true),
+    net_kernel:monitor_nodes(true, [nodedown_reason]),
     io:format("here 1~n"),
     erlang:send_after(1500,self(),send_time),
     io:format("here 2~n"),
@@ -106,14 +106,21 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info(send_time,State) ->
     lists:foreach(fun(Node) ->
-                      io:format("Sending time to ~p~n", [Node]),
-                      gen_server:cast({?SERVER, Node}, {receive_time, now()})
+                      Now = now(),
+                      io:format("Sending time ~p to ~p~n", [Now, Node]),
+                      gen_server:cast({?SERVER, Node}, {receive_time, Now})
                   end, State#state.nodes),
     erlang:send_after(1500,self(),send_time),
+    {noreply,State};
+handle_info({nodedown,Node, InfoList},State) ->
+    io:format("nodedown: ~p with reason ~p~n",[Node,InfoList]),
     {noreply,State};
 handle_info({nodedown,Node},State) ->
     io:format("nodedown: ~p~n",[Node]),
     {noreply,State};
+handle_info({nodeup,Node,InfoList},State) ->
+    io:format("nodeup: ~p with reason~p~n",[Node,InfoList]),
+    {noreply,State#state{nodes = lists:usort(State#state.nodes ++ [Node])}};
 handle_info({nodeup,Node},State) ->
     io:format("nodeup: ~p~n",[Node]),
     {noreply,State#state{nodes = lists:usort(State#state.nodes ++ [Node])}};
